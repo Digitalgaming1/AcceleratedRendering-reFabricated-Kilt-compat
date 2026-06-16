@@ -8,9 +8,9 @@ import fuzs.forgeconfigapiport.api.config.v2.ForgeConfigRegistry;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.ModContainer;
-import net.minecraftforge.fml.ModLoader;
+import net.fml.eventbus.api.IEventBus;
+import net.fml.fml.ModContainer;
+import net.fml.fml.ModLoader;
 import net.minecraftforge.fml.config.ModConfig;
 import org.slf4j.Logger;
 

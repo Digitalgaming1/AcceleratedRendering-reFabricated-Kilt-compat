@@ -6,7 +6,7 @@ import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.draw.poo
 import com.github.argon4w.acceleratedrendering.core.programs.culling.ICullingProgramSelector;
 import com.github.argon4w.acceleratedrendering.core.programs.culling.LoadCullingProgramSelectorEvent;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraftforge.fml.ModLoader;
+import net.fml.fml.ModLoader;
 
 public class IndirectDrawMethod implements IDrawMethod {
 

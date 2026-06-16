@@ -6,11 +6,11 @@ package com.github.argon4w.acceleratedrendering.features.filter.mixins;
 //import com.github.argon4w.acceleratedrendering.features.text.AcceleratedTextRenderingFeature;
 //import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 //import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-//import net.minecraftforge.client.ForgeHooksClient;
+//import net.fml.client.ForgeHooksClient;
 //
-//import net.minecraftforge.client.event.RenderLevelStageEvent;
-//import net.minecraftforge.eventbus.api.Event;
-//import net.minecraftforge.eventbus.api.IEventBus;
+//import net.fml.client.event.RenderLevelStageEvent;
+//import net.fml.eventbus.api.Event;
+//import net.fml.eventbus.api.IEventBus;
 //import org.spongepowered.asm.mixin.Mixin;
 //import org.spongepowered.asm.mixin.injection.At;
 //

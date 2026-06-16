@@ -16,7 +16,7 @@ import com.github.argon4w.acceleratedrendering.core.programs.processing.LoadPoly
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.fml.ModLoader;
+import net.fml.fml.ModLoader;
 
 import java.util.Set;
 

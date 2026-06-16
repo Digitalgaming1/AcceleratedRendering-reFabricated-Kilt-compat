@@ -19,7 +19,7 @@ import net.irisshaders.iris.api.v0.IrisApi;
 import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.fml.ModLoader;
+import net.fml.fml.ModLoader;
 
 import java.util.Set;
 

@@ -1,4 +1,4 @@
-package net.minecraftforge.eventbus.api;
+package net.fml.eventbus.api;
 
 public enum EventPriority {
     HIGHEST,

@@ -1,9 +1,9 @@
-package net.minecraftforge.fml;
+package net.fml.fml;
 
-import net.minecraftforge.eventbus.api.Event;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.event.IModBusEvent;
+import net.fml.eventbus.api.Event;
+import net.fml.eventbus.api.EventPriority;
+import net.fml.eventbus.api.IEventBus;
+import net.fml.fml.event.IModBusEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

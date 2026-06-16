@@ -1,4 +1,4 @@
-package net.minecraftforge.eventbus.api;
+package net.fml.eventbus.api;
 
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;

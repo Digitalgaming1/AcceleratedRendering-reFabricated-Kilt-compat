@@ -3,7 +3,7 @@ package com.github.argon4w.acceleratedrendering.core.programs;
 import com.github.argon4w.acceleratedrendering.core.backends.programs.BarrierFlags;
 import com.github.argon4w.acceleratedrendering.core.utils.ResourceLocationUtils;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.fml.eventbus.api.SubscribeEvent;
 
 public class ComputeShaderPrograms {
 

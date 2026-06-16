@@ -7,8 +7,8 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import lombok.Getter;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraftforge.eventbus.api.Event;
-import net.minecraftforge.fml.event.IModBusEvent;
+import net.fml.eventbus.api.Event;
+import net.fml.fml.event.IModBusEvent;
 
 public class LoadShaderProgramOverridesEvent extends Event implements IModBusEvent {
 

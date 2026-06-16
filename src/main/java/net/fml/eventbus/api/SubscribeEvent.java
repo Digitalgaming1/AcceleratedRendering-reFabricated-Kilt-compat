@@ -1,4 +1,4 @@
-package net.minecraftforge.eventbus.api;
+package net.fml.eventbus.api;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
