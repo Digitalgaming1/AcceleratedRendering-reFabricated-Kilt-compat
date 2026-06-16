@@ -4,10 +4,12 @@ import com.github.argon4w.acceleratedrendering.core.backends.states.buffers.Bloc
 import com.github.argon4w.acceleratedrendering.core.backends.states.buffers.cache.BlockBufferBindingCacheType;
 import com.github.argon4w.acceleratedrendering.core.backends.states.scissors.ScissorBindingStateType;
 import com.github.argon4w.acceleratedrendering.core.backends.states.viewports.ViewportBindingStateType;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.draw.DrawMethodType;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.storage.LayerStorageType;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.meshes.MeshInfoCacheType;
 import com.github.argon4w.acceleratedrendering.core.meshes.MeshType;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshMergeType;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.MeshCollectorType;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.cache.MeshDataCacheType;
 import com.github.argon4w.acceleratedrendering.features.filter.FilterType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.ForgeConfigSpec;
@@ -21,17 +23,18 @@ public class FeatureConfig {
 	public static	final	FeatureConfig												CONFIG;
 	public static	final	ForgeConfigSpec												SPEC;
 
+	public			final	ForgeConfigSpec.IntValue									coreSparseThreshold;
 	public			final	ForgeConfigSpec.IntValue									corePooledRingBufferSize;
 	public			final	ForgeConfigSpec.IntValue									corePooledBatchingSize;
 	public			final	ForgeConfigSpec.IntValue									coreCachedImageSize;
 	public			final	ForgeConfigSpec.IntValue									coreDynamicUVResolution;
+	public			final	ForgeConfigSpec.ConfigValue<DrawMethodType>					coreDrawMethodType;
+	public			final	ForgeConfigSpec.ConfigValue<MeshCollectorType>				coreMeshCollectorType;
 	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreDebugContextEnabled;
 	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreForceTranslucentAcceleration;
-	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreCacheIdenticalPose;
 	public			final	ForgeConfigSpec.ConfigValue<MeshInfoCacheType>				coreMeshInfoCacheType;
 	public			final	ForgeConfigSpec.ConfigValue<LayerStorageType>				coreLayerStorageType;
-	public			final	ForgeConfigSpec.ConfigValue<MeshMergeType>					coreMeshMergeType;
-	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreUploadMeshImmediately;
+	public			final	ForgeConfigSpec.ConfigValue<MeshDataCacheType>				coreMeshMergeType;
 	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreCacheDynamicRenderType;
 	public			final	ForgeConfigSpec.ConfigValue<ViewportBindingStateType>		coreViewportBindingType;
 	public			final	ForgeConfigSpec.ConfigValue<ScissorBindingStateType>		coreScissorBindingType;
@@ -96,10 +99,21 @@ public class FeatureConfig {
 	public final		ForgeConfigSpec.ConfigValue<FilterType>				            trinketsItemFilterType;
 	public final		ForgeConfigSpec.ConfigValue<List<? extends String>>	            trinketsItemFilterValues;
 
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsVanillaFixFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsVanillaFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsEmfFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsGeckoFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsTlmFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsSbmFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsFtbFeatureStatus;
+	public 			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsSophisticatedFeatureStatus;
+	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					modsModernUIFeatureStatus;
+
 	static {
 		Pair<FeatureConfig, ForgeConfigSpec> pair	= new ForgeConfigSpec.Builder()	.configure	(FeatureConfig::new);
-		CONFIG									= pair							.getLeft	();
-		SPEC									= pair							.getRight	();
+		CONFIG										= pair							.getLeft	();
+		SPEC										= pair							.getRight	();
 	}
 
 	private FeatureConfig(ForgeConfigSpec.Builder builder) {
@@ -109,31 +123,51 @@ public class FeatureConfig {
 				.translation			("acceleratedrendering.configuration.core_settings")
 				.push					("core_settings");
 
+		coreSparseThreshold								= builder
+				.comment				("Maximum amount of same meshes in a draw before it is switched to dense uploading method.")
+				.comment				("Changing this value may affects your FPS in certain situation. Smaller value means meshes will use dense mesh uploading with fewer occurrences, while larger values means meshes will use sparse mesh uploading even with higher occurrences.")
+				.translation			("acceleratedrendering.configuration.core_settings.sparse_threshold")
+				.defineInRange			("sparse_threshold",					64,	16,	128);
+
 		corePooledRingBufferSize						= builder
 				.worldRestart			()
 				.comment				("Count of buffer sets that holds data for in-flight frame rendering.")
 				.comment				("Changing this value may affects your FPS. Smaller value means less in-flight frames, while larger values means more in-flight frames. More in-flight frames means more FPS but more VRAM.")
 				.translation			("acceleratedrendering.configuration.core_settings.pooled_ring_buffer_size")
-				.defineInRange			("pooled_ring_buffer_size",				8,	1,	Integer.MAX_VALUE);
+				.defineInRange			("pooled_ring_buffer_size",				8,		1,	Integer.MAX_VALUE);
 
 		corePooledBatchingSize							= builder
 				.worldRestart			()
 				.comment				("Count of batches of RenderTypes that is allowed in a draw call.")
 				.comment				("Changing this value may affects your FPS. Smaller value means less batches allowed in a draw call, while larger values means more batches. More batches means more FPS but more VRAM and more CPU pressure on handling RenderTypes.")
 				.translation			("acceleratedrendering.configuration.core_settings.pooled_batching_size")
-				.defineInRange			("pooled_batching_size",				32,	1,	Integer.MAX_VALUE);
+				.defineInRange			("pooled_batching_size",				128,	1,	Integer.MAX_VALUE);
 
 		coreCachedImageSize								= builder
 				.comment				("Count of images that cached for static mesh culling.")
 				.comment				("Changing this value may affects your FPS. Smaller value means less images allowed to be cached, while larger means more cached images. More cached images means more FPS but more RAM pressure.")
 				.translation			("acceleratedrendering.configuration.core_settings.cached_image_size")
-				.defineInRange			("cached_image_size",					32,	1,	Integer.MAX_VALUE);
+				.defineInRange			("cached_image_size",					32,		1,	Integer.MAX_VALUE);
 
 		coreDynamicUVResolution							= builder
 				.comment				("Resolution of UV scrolling in caching dynamic render types.")
 				.comment				("Changing this value may affects your visual effects and VRAM usage. Smaller value means lower resolution in UV scrolling and less cached render types, while larger means higher resolution and more cached render types. Higher resolution means smoother animations on charged creepers and breezes but more VRAM usage.")
 				.translation			("acceleratedrendering.configuration.core_settings.dynamic_uv_resolution")
-				.defineInRange			("dynamic_uv_resolution",				64,	1,	Integer.MAX_VALUE);
+				.defineInRange			("dynamic_uv_resolution",				64,		1,	Integer.MAX_VALUE);
+
+		coreDrawMethodType								= builder
+				.comment				("- INDIRECT: Indices of vertices will be generated automatically every draw call, which allows advanced orientation culling to be applied before the actual draw call. But it could be slightly slower when there are too many draw calls present in a frame.")
+				.comment				("- BASEVERTEX: Indices of vertices will be cached across the draw calls and frames, which will be faster when there are too many draw calls present in a frame. But orientation culling will be disabled when using this method.")
+				.translation			("acceleratedrendering.configuration.core_settings.draw_method_type")
+				.worldRestart			()
+				.defineEnum				("draw_method_type",					DrawMethodType.BASEVERTEX);
+
+		coreMeshCollectorType							= builder
+				.comment				("- SIMPLE: All faces including invisible faces of the model will be included in the final mesh of the model. It might be slower when rendering some models but it allows same models with different textures to be merged more effectively.")
+				.comment				("- CULLED: Invisible faces of the model will be excluded from the final mesh of the model. It will speed up the rendering of some specific models but it might break the merging of same models with different textures.")
+				.translation			("acceleratedrendering.configuration.core_settings.mesh_collector_type")
+				.worldRestart			()
+				.defineEnum				("mesh_collector_type",					MeshCollectorType.CULLED);
 
 		coreDebugContextEnabled							= builder
 				.comment				("- DISABLED: Debug context will be disabled, which may cause significant rendering glitches on some NVIDIA cards because of the \"theaded optimization\".")
@@ -147,12 +181,6 @@ public class FeatureConfig {
 				.comment				("- ENABLED: Translucent RenderType will still be rendered in accelerated pipeline even if the pipeline does not support translucent sorting unless mods explicitly disable force translucent acceleration temporarily when rendering their own geometries.")
 				.translation			("acceleratedrendering.configuration.core_settings.force_translucent_acceleration")
 				.defineEnum				("force_translucent_acceleration",		FeatureStatus.ENABLED);
-
-		coreCacheIdenticalPose							= builder
-				.comment				("- DISABLED: Poses with identical transform matrix and normal matrix that used to transform vertices will not be cached in buffer which slightly decreases CPU pressure but increase VRAM usage unless mods explicitly disable it when rendering.")
-				.comment				("- ENABLED: Poses with identical transform matrix and normal matrix that used to transform vertices will be cached in buffer which save VRAM but slightly increase CPU pressure unless mods explicitly disable it when rendering.")
-				.translation			("acceleratedrendering.configuration.core_settings.cache_identical_pose")
-				.defineEnum				("cache_identical_pose",				FeatureStatus.ENABLED);
 
 		coreMeshInfoCacheType							= builder
 				.comment				("- SIMPLE: The most basic implementation of cache. Usually used for testing if other cache types are working properly.")
@@ -174,13 +202,7 @@ public class FeatureConfig {
 				.comment				("- MERGED: Meshes with identical vertices will be merged together, which will use less VRAM more RAM in storing the data of meshes used in merging.")
 				.translation			("acceleratedrendering.configuration.core_settings.mesh_merge_type")
 				.worldRestart			()
-				.defineEnum				("mesh_merge_type",						MeshMergeType.MERGED);
-
-		coreUploadMeshImmediately						= builder
-				.comment				("- DISABLED: Meshes that is going to be accelerated will be collected and uploaded together at the end for choosing better uploading method and increasing memory access efficiency to reach the best performance. Also this method allows mesh cache with bigger capacity (up to VRAM limit), but it may not follow the correct draw order.")
-				.comment				("- ENABLED: Meshes that is going to be accelerated will be uploaded immediately after the draw command. It is less efficient and only have about 2GB mesh cache (generally enough) but will follow the original draw order to get the most compatibility.")
-				.translation			("acceleratedrendering.configuration.core_settings.upload_mesh_immediately")
-				.defineEnum				("upload_mesh_immediately",				FeatureStatus.DISABLED);
+				.defineEnum				("mesh_merge_type",						MeshDataCacheType.MERGED);
 
 		coreCacheDynamicRenderType						= builder
 				.comment				("- DISABLED: Dynamic render types like lightning on charged creepers and winds on breezes will not be accelerated for less VRAM usage and smoother animations, but may exceptionally skip acceleration in modded geometries using these render types.")
@@ -598,6 +620,74 @@ public class FeatureConfig {
 			.translation			("acceleratedrendering.configuration.trinkets_compatibility.item_filter_values")
 			.worldRestart			()
 			.defineListAllowEmpty	(List.of("item_filter_values"), ObjectArrayList::new, object -> object instanceof String string && ResourceLocation.tryParse(string) != null);
+		builder.pop();
+
+		builder
+				.comment				("Miscellaneous Mods Compatibility Settings")
+				.comment				("Miscellaneous Mod Compatibility Settings allows Accelerated Rendering to prevent negative optimization on specific mods by controlling whether Accelerated Rendering should accelerate the rendering of the corresponding mod.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility")
+				.push					("mods_compatibility");
+
+		modsFeatureStatus								= builder
+				.comment				("- DISABLED: Accelerations of all mods listed in the miscellaneous mods compatibility settings will be disabled.")
+				.comment				("- ENABLED: Accelerated Rendering will determine if a mod should be accelerated by the acceleration feature configuration item of this mod listed below.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.feature_status")
+				.defineEnum				("feature_status",						FeatureStatus.ENABLED);
+
+		modsVanillaFixFeatureStatus						= builder
+				.comment				("- DISABLED: Fixes for rendering order of armor trims and render layers in Vanilla Minecraft will be disabled, which is faster but cause slight visual inconsistency when rendering those features.")
+				.comment				("- ENABLED: Fixes for rendering order of armor trims and render layers in Vanilla Minecraft will be enabled, which is slower but has consistent and correct rendering order when rendering those features.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.vanilla_fix_feature_status")
+				.defineEnum				("vanilla_fix_feature_status",			FeatureStatus.ENABLED);
+
+		modsVanillaFeatureStatus						= builder
+				.comment				("- DISABLED: Accelerations of ModelPart models of Vanilla Minecraft will be disabled.")
+				.comment				("- ENABLED: Accelerations of ModelPart models of Vanilla Minecraft will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.vanilla_feature_status")
+				.defineEnum				("vanilla_feature_status",				FeatureStatus.ENABLED);
+
+		modsEmfFeatureStatus							= builder
+				.comment				("- DISABLED: Accelerations of animated ModelPart variants in Entity Model Features will be disabled.")
+				.comment				("- ENABLED: Accelerations of animated ModelPart variants in Entity Model Features will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.emf_feature_status")
+				.defineEnum				("emf_feature_status",					FeatureStatus.ENABLED);
+
+		modsGeckoFeatureStatus							= builder
+				.comment				("- DISABLED: Accelerations of models in GeckoLib will be disabled.")
+				.comment				("- ENABLED: Accelerations of models in GeckoLib will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.gecko_feature_status")
+				.defineEnum				("gecko_feature_status",				FeatureStatus.ENABLED);
+
+		modsTlmFeatureStatus							= builder
+				.comment				("- DISABLED: Accelerations of GeckoLib variant models in Touhou Little Maid will be disabled.")
+				.comment				("- ENABLED: Accelerations of GeckoLib variant models in Touhou Little Maid will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.tlm_feature_status")
+				.defineEnum				("tlm_feature_status",					FeatureStatus.ENABLED);
+
+		modsSbmFeatureStatus							= builder
+				.comment				("- DISABLED: Accelerations of bedrock models in Simple Bedrock Model will be disabled.")
+				.comment				("- ENABLED: Accelerations of bedrock models in Simple Bedrock Model will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.sbm_feature_status")
+				.defineEnum				("sbm_feature_status",					FeatureStatus.ENABLED);
+
+		modsFtbFeatureStatus							= builder
+				.comment				("- DISABLED: Accelerations of UI driven by FTB Library will be disabled.")
+				.comment				("- ENABLED: Accelerations of UI driven by FTB Library will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.ftb_feature_status")
+				.defineEnum				("ftb_feature_status",					FeatureStatus.ENABLED);
+
+		modsSophisticatedFeatureStatus					= builder
+				.comment				("- DISABLED: Accelerations of UI driven by Sophisticated Core will be disabled.")
+				.comment				("- ENABLED: Accelerations of UI driven by Sophisticated Core will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.sophisticated_feature_status")
+				.defineEnum				("sophisticated_feature_status",		FeatureStatus.ENABLED);
+
+		modsModernUIFeatureStatus					= builder
+				.comment				("- DISABLED: Accelerations of text driven by ModernUI's modern text engine will be disabled.")
+				.comment				("- ENABLED: Accelerations of text driven by by ModernUI's modern text engine will be enabled.")
+				.translation			("acceleratedrendering.configuration.mods_compatibility.modernui_feature_status")
+				.defineEnum				("modernui_feature_status",		FeatureStatus.ENABLED);
+
 		builder.pop();
 	}
 }

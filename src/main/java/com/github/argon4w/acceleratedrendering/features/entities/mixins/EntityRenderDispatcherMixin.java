@@ -28,8 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 )
 public class EntityRenderDispatcherMixin {
 
-	@Unique private static final Matrix3f							SHADOW_NORMAL_MATRIX	= new Matrix3f().identity				();
-	@Unique private static final AcceleratedEntityShadowRenderer	SHADOW_RENDERER			= new AcceleratedEntityShadowRenderer	();
+	@Unique private static final Matrix3f SHADOW_NORMAL_MATRIX = new Matrix3f().identity();
 
 	@Inject(
 			method		= "renderBlockShadow",
@@ -51,15 +50,16 @@ public class EntityRenderDispatcherMixin {
 	) {
 		var extension = pVertexConsumer.getAccelerated();
 
-		if (		CoreFeature							.isRenderingLevel				()
+		if (		CoreFeature							.isLoaded						()
+				&&	CoreFeature							.isRenderingLevel				()
 				&&	AcceleratedEntityRenderingFeature	.isEnabled						()
 				&&	AcceleratedEntityRenderingFeature	.shouldUseAcceleratedPipeline	()
 				&&	extension							.isAccelerated					()
 		) {
 			ci			.cancel		();
 			extension	.doRender	(
-					SHADOW_RENDERER,
-					new AcceleratedEntityShadowRenderer.Context(
+					AcceleratedEntityShadowRenderer.INSTANCE,
+					AcceleratedEntityShadowRenderer.context(
 							pLevel,
 							pChunk,
 							pPos,

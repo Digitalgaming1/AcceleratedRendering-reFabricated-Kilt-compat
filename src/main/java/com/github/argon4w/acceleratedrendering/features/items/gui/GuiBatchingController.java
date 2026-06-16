@@ -1,88 +1,148 @@
 package com.github.argon4w.acceleratedrendering.features.items.gui;
 
+import com.github.argon4w.acceleratedrendering.core.CoreBuffers;
 import com.github.argon4w.acceleratedrendering.core.CoreFeature;
+import com.github.argon4w.acceleratedrendering.core.CoreStates;
 import com.github.argon4w.acceleratedrendering.core.backends.states.IBindingState;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.BufferSourceExtension;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.VertexConsumerExtension;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.LayerDrawType;
+import com.github.argon4w.acceleratedrendering.core.utils.PoseStackExtension;
+import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import com.github.argon4w.acceleratedrendering.features.items.AcceleratedItemRenderingFeature;
-import com.github.argon4w.acceleratedrendering.features.items.IAcceleratedGuiGraphics;
-import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.DecoratorDrawContext;
-import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.HighlightDrawContext;
-import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.RectangleDrawContext;
-import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.StringDrawContext;
+import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.*;
+import com.github.argon4w.acceleratedrendering.features.items.gui.contexts.string.IStringDrawContext;
+import com.github.argon4w.acceleratedrendering.features.items.gui.renderers.AcceleratedBlitRenderer;
+import com.github.argon4w.acceleratedrendering.features.items.gui.renderers.AcceleratedFillRenderer;
+import com.github.argon4w.acceleratedrendering.features.items.gui.renderers.AcceleratedGradientRenderer;
+import com.mojang.blaze3d.platform.Lighting;
+import it.unimi.dsi.fastutil.floats.Float2ReferenceAVLTreeMap;
+import it.unimi.dsi.fastutil.floats.Float2ReferenceSortedMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
+import lombok.Getter;
 import lombok.experimental.ExtensionMethod;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 
 import java.util.List;
 
-@SuppressWarnings	("UnstableApiUsage")
-@ExtensionMethod	(VertexConsumerExtension.class)
+
+@ExtensionMethod({
+		VertexConsumerExtension	.class,
+		BufferSourceExtension	.class,
+		PoseStackExtension		.class,
+})
 public class GuiBatchingController {
 
-	public static	final GuiBatchingController	INSTANCE = new GuiBatchingController();
+	public static	final	GuiBatchingController			INSTANCE	= new GuiBatchingController();
+	public static	final	float							DELTA		= 1e-6f;
 
-	private			final IBindingState					scissorDraw;
-	private			final IBindingState					scissorFlush;
-	private			final List<StringDrawContext>		stringDrawContexts;
-	private			final List<DecoratorDrawContext>	decoratorDrawContexts;
-	private			final List<HighlightDrawContext>	highlightDrawContexts;
-	private			final List<RectangleDrawContext>	rectangleDrawContexts;
+	private			final	IBindingState					scissorDraw;
+	private			final	IBindingState					scissorFlush;
+	private			final	List<BlitDrawContext>			blitDrawContexts;
+	private			final	List<IStringDrawContext>		stringDrawContexts;
+	private			final	List<DecoratorDrawContext>		decoratorDrawContexts;
+	private			final	List<FillDrawContext>			fillDrawContexts;
+	private			final	List<HighlightDrawContext>		highlightDrawContexts;
+	private			final	List<GradientDrawContext>		gradientDrawContexts;
+	private			final	List<ItemRenderContext>			flatItemDrawContexts;
+	private			final	List<ItemRenderContext>			blockItemDrawContexts;
+	private			final	Float2ReferenceSortedMap<Layer>	depthLayers;
 
 	private GuiBatchingController() {
-		this.scissorDraw			= CoreFeature.createScissorState();
-		this.scissorFlush			= CoreFeature.createScissorState();
-		this.stringDrawContexts		= new ReferenceArrayList<>		();
-		this.decoratorDrawContexts	= new ReferenceArrayList<>		();
-		this.highlightDrawContexts	= new ReferenceArrayList<>		();
-		this.rectangleDrawContexts	= new ReferenceArrayList<>		();
+		this.scissorDraw			= CoreFeature.createScissorState	();
+		this.scissorFlush			= CoreFeature.createScissorState	();
+		this.blitDrawContexts		= new ReferenceArrayList		<>	();
+		this.stringDrawContexts		= new ReferenceArrayList		<>	();
+		this.decoratorDrawContexts	= new ReferenceArrayList		<>	();
+		this.fillDrawContexts		= new ReferenceArrayList		<>	();
+		this.highlightDrawContexts	= new ReferenceArrayList		<>	();
+		this.gradientDrawContexts	= new ReferenceArrayList		<>	();
+		this.flatItemDrawContexts	= new ReferenceArrayList		<>	();
+		this.blockItemDrawContexts	= new ReferenceArrayList		<>	();
+		this.depthLayers			= new Float2ReferenceAVLTreeMap	<>	();
 	}
 
 	public void startBatching(GuiGraphics graphics) {
-		if (		AcceleratedItemRenderingFeature	.isEnabled						()
-				&&	AcceleratedItemRenderingFeature	.shouldUseAcceleratedPipeline	()
-				&&	AcceleratedItemRenderingFeature	.shouldAccelerateInGui			()
-				&&	AcceleratedItemRenderingFeature	.shouldUseGuiItemBatching		()
-				&&	CoreFeature						.isLoaded						()
+		if (		graphics.bufferSource().getAcceleratable()	.isBufferSourceAcceleratable		()
+				&&	AcceleratedItemRenderingFeature				.isEnabled							()
+				&&	AcceleratedItemRenderingFeature				.shouldUseAcceleratedPipeline		()
+				&&	AcceleratedItemRenderingFeature				.shouldAccelerateInGui				()
+				&&	AcceleratedItemRenderingFeature				.shouldUseGuiItemBatching			()
+				&&	CoreFeature									.isLoaded							()
+				&&	CoreFeature									.shouldForceAccelerateTranslucent	()
 		) {
 			CoreFeature.setGuiBatching	();
 			scissorDraw.record			(graphics);
 		}
 	}
 
-	public void flushBatching(GuiGraphics graphics) {
+	@SuppressWarnings("UnstableApiUsage")
+	public float flushBatching(GuiGraphics graphics) {
 		if (CoreFeature.isGuiBatching()) {
-			var poseStack = graphics.pose();
+			var itemRenderer	= Minecraft.getInstance()	.getItemRenderer();
+			var bufferSource	= graphics					.bufferSource	();
+			var poseStack		= graphics					.pose			();
+			var offset			= 0.0f;
 
-			CoreFeature.setRenderingGui();
+			CoreFeature.resetGuiBatching();
+			CoreFeature.setRenderingGui	();
 
-			for (var context : stringDrawContexts) {
-				poseStack.pushPose	();
-				poseStack.last		().pose		().set(context.transform());
-				poseStack.last		().normal	().set(context.normal	());
+			for (var depthLayer : depthLayers.values()) {
+				var layerElements	= depthLayer	.getLayerElements	();
+				var layerDepth		= depthLayer	.getLayerDepth		();
+				var layerNext		= depthLayers	.tailMap			(layerDepth + DELTA);
+				var depth			= 0.0f;
+				var step			= 0.1f;
 
-				graphics.drawString(
-						context.font		(),
-						context.text		(),
-						context.textX		(),
-						context.textY		(),
-						context.textColor	(),
-						context.dropShadow	()
-				);
+				if (!layerNext.isEmpty()) {
+					step = 1.0f / layerNext.get(layerNext.firstFloatKey()).getLayerElements().size();
+				}
 
-				graphics.pose().popPose();
+				for (var element : layerElements) {
+					element.transform().translateLocal(
+							0.0f,
+							0.0f,
+							depth
+					);
+
+					depth += step;
+				}
+
+				offset = layerDepth + depth;
 			}
 
-			for (var context : rectangleDrawContexts) {
+			for (var context : blitDrawContexts) {
+				var extension = graphics.bufferSource().getBuffer(GuiRenderTypes.blit(context.atlasLocation())).getAccelerated();
+
+				if (extension.isAccelerated()) {
+					extension.doRender(
+							AcceleratedBlitRenderer.INSTANCE,
+							context,
+							context.transform	(),
+							context.normal		(),
+							context.blitLight	(),
+							context.blitOverlay	(),
+							context.blitColor	()
+					);
+				}
+			}
+
+			for (var context : fillDrawContexts) {
 				var extension = graphics.bufferSource().getBuffer(context.renderType()).getAccelerated();
 
 				if (extension.isAccelerated()) {
 					extension.doRender(
-							AcceleratedRectangleRenderer.INSTANCE,
+							AcceleratedFillRenderer.INSTANCE,
 							context,
 							context.transform	(),
 							context.normal		(),
@@ -90,50 +150,86 @@ public class GuiBatchingController {
 							context.overlay		(),
 							context.color		()
 					);
-				} else {
-					poseStack.pushPose	();
-					poseStack.last		().pose		().set(context.transform());
-					poseStack.last		().normal	().set(context.normal	());
-
-					graphics.fill(
-							context.renderType	(),
-							context.minX		(),
-							context.minY		(),
-							context.maxX		(),
-							context.maxY		(),
-							context.color		()
-					);
-
-					graphics.pose().popPose();
 				}
 			}
 
-			scissorFlush						.record				(graphics);
-			scissorDraw							.restore			();
-			CoreFeature							.resetGuiBatching	();
-			CoreFeature							.resetRenderingGui	();
-			((IAcceleratedGuiGraphics) graphics).flushItemBatching	();
+			for (var context : gradientDrawContexts) {
+				var extension = graphics.bufferSource().getBuffer(context.renderType()).getAccelerated();
 
-//			for (var context : decoratorDrawContexts) {
-//				poseStack.pushPose	();
-//				poseStack.last		().pose()	.set(context.transform	());
-//				poseStack.last		().normal()	.set(context.normal		());
-//
-//				context.handler().render(
-//						graphics,
-//						context.font	(),
-//						context.stack	(),
-//						context.xOffset	(),
-//						context.yOffset	()
-//				);
-//
-//				graphics.pose().popPose();
-//			}
+				if (extension.isAccelerated()) {
+					extension.doRender(
+							AcceleratedGradientRenderer.INSTANCE,
+							context,
+							context.transform	(),
+							context.normal		(),
+							context.light		(),
+							context.overlay		(),
+							-1
+					);
+				}
+			}
+
+			for (var context : stringDrawContexts) {
+				context.drawString(graphics.bufferSource());
+			}
+
+			scissorFlush.record	(graphics);
+			scissorDraw	.restore();
+
+			Lighting	.setupForFlatItems					();
+			CoreFeature	.forceSetDefaultLayer				(1);
+			CoreFeature	.forceSetDefaultLayerBeforeFunction	(Lighting::setupForFlatItems);
+			CoreFeature	.forceSetDefaultLayerAfterFunction	(Lighting::setupFor3DItems);
+
+			for (var context : flatItemDrawContexts) {
+				poseStack.pushPose	();
+				poseStack.setPose	(context.transform(), context.normal());
+
+				itemRenderer.render(
+						context.itemStack		(),
+						context.displayContext	(),
+						context.leftHand		(),
+						poseStack,
+						bufferSource,
+						context.combinedLight	(),
+						context.combinedOverlay	(),
+						context.bakedModel		()
+				);
+
+				poseStack.popPose();
+			}
+
+			graphics	.flush							();
+			Lighting	.setupFor3DItems				();
+			CoreFeature	.resetDefaultLayer				();
+			CoreFeature	.resetDefaultLayerBeforeFunction();
+			CoreFeature	.resetDefaultLayerAfterFunction	();
+
+			for (var context : blockItemDrawContexts) {
+				poseStack.pushPose	();
+				poseStack.setPose	(context.transform(), context.normal());
+
+				itemRenderer.render(
+						context.itemStack		(),
+						context.displayContext	(),
+						context.leftHand		(),
+						poseStack,
+						bufferSource,
+						context.combinedLight	(),
+						context.combinedOverlay	(),
+						context.bakedModel		()
+				);
+
+				poseStack.popPose();
+			}
+
+			CoreFeature	.resetRenderingGui	();
+			graphics	.flush				();
+			flushBatching					();
 
 			for (var context : highlightDrawContexts) {
 				poseStack.pushPose	();
-				poseStack.last		().pose		().set(context.transform());
-				poseStack.last		().normal	().set(context.normal	());
+				poseStack.setPose	(context.transform(), context.normal());
 
 				AbstractContainerScreen.renderSlotHighlight(
 						graphics,
@@ -145,112 +241,338 @@ public class GuiBatchingController {
 				graphics.pose().popPose();
 			}
 
+			depthLayers				.clear	();
+			blitDrawContexts		.clear	();
 			stringDrawContexts		.clear	();
 			decoratorDrawContexts	.clear	();
+			fillDrawContexts		.clear	();
 			highlightDrawContexts	.clear	();
-			rectangleDrawContexts	.clear	();
+			gradientDrawContexts	.clear	();
+			flatItemDrawContexts	.clear	();
+			blockItemDrawContexts	.clear	();
 			scissorFlush			.restore();
+
+			return offset;
 		}
+
+		return 0.0f;
 	}
 
-	public void recordString(
-			GuiGraphics	graphics,
-			Font		font,
-			String		text,
-			int			textX,
-			int			textY,
-			int			textColor,
-			boolean		dropShadow
+	public void flushBatching() {
+		CoreStates						.recordBuffers	();
+		CoreBuffers.POS					.prepareBuffers	();
+		CoreBuffers.POS_TEX_COLOR		.prepareBuffers	();
+		CoreBuffers.POS_COLOR_TEX_LIGHT	.prepareBuffers	();
+		CoreBuffers.ENTITY				.prepareBuffers	();
+		CoreBuffers.BLOCK				.prepareBuffers	();
+		CoreBuffers.POS_COLOR			.prepareBuffers	();
+		CoreBuffers.POS_TEX				.prepareBuffers	();
+		CoreStates						.restoreBuffers	();
+
+		CoreBuffers.POS					.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.POS_TEX_COLOR		.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.POS_COLOR_TEX_LIGHT	.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.ENTITY				.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.BLOCK				.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.POS_COLOR			.drawBuffers	(LayerDrawType.ALL);
+		CoreBuffers.POS_TEX				.drawBuffers	(LayerDrawType.ALL);
+
+		CoreBuffers.POS					.clearBuffers	();
+		CoreBuffers.POS_TEX_COLOR		.clearBuffers	();
+		CoreBuffers.POS_COLOR_TEX_LIGHT	.clearBuffers	();
+		CoreBuffers.ENTITY				.clearBuffers	();
+		CoreBuffers.BLOCK				.clearBuffers	();
+		CoreBuffers.POS_COLOR			.clearBuffers	();
+		CoreBuffers.POS_TEX				.clearBuffers	();
+	}
+
+	public void submitBlit(
+			Matrix4f			transform,
+			Matrix3f			normal,
+			ResourceLocation	atlasLocation,
+			int					minX,
+			int					maxX,
+			int					minY,
+			int					maxY,
+			int					blitOffset,
+			int					blitColor,
+			float				minU,
+			float				maxU,
+			float				minV,
+			float				maxV
 	) {
-		var last = graphics
-				.pose()
-				.last();
-
-		stringDrawContexts.add(new StringDrawContext(
-				new Matrix4f(last.pose	()),
-				new Matrix3f(last.normal()),
-				font,
-				text,
-				textX,
-				textY,
-				textColor,
-				dropShadow
+		var layer = getLayer(getGlobalDepth(
+				transform.m22(),
+				transform.m32(),
+				blitOffset
 		));
+
+		var context = new BlitDrawContext(
+				new Matrix4f(transform),
+				new Matrix3f(normal),
+				atlasLocation,
+				minX,
+				maxX,
+				minY,
+				maxY,
+				blitOffset,
+				blitColor,
+				0,
+				0,
+				minU,
+				maxU,
+				minV,
+				maxV
+		);
+
+		blitDrawContexts.add(context);
+		layer			.add(context);
 	}
 
-	public void recordRectangle(
-			GuiGraphics	graphics,
+	public void submitItem(
+			Matrix4f			transform,
+			Matrix3f			normal,
+			ItemStack			itemStack,
+			ItemDisplayContext	displayContext,
+			boolean				leftHand,
+			int					combinedLight,
+			int					combinedOverlay,
+			BakedModel			bakedModel,
+			boolean				blockLight
+	) {
+		var layer = getLayer(getGlobalDepth(
+				transform.m22(),
+				transform.m32(),
+				0.0f
+		));
+
+		var context = new ItemRenderContext(
+				new Matrix4f(transform),
+				new Matrix3f(normal),
+				itemStack,
+				displayContext,
+				leftHand,
+				combinedLight,
+				combinedOverlay,
+				bakedModel
+		);
+
+		var contexts = blockLight ? blockItemDrawContexts : flatItemDrawContexts;
+
+		contexts.add(context);
+		layer	.add(context);
+	}
+
+	public void submitFill(
+			Matrix4f	transform,
+			Matrix3f	normal,
 			RenderType	renderType,
 			int			minX,
 			int			minY,
 			int			maxX,
 			int			maxY,
+			int			blitOffset,
 			int			color
 	) {
-		var last = graphics
-				.pose()
-				.last();
+		if (RenderTypeUtils.hasDepth(renderType)) {
+			var layer = getLayer(getGlobalDepth(
+					transform.m22(),
+					transform.m32(),
+					blitOffset
+			));
 
-		rectangleDrawContexts.add(new RectangleDrawContext(
-				new Matrix4f(last.pose	()),
-				new Matrix3f(last.normal()),
-				renderType,
-				minX,
-				minY,
-				maxX,
-				maxY,
-				color,
-				0,
-				0
-		));
+			var context = new FillDrawContext(
+					new Matrix4f(transform),
+					new Matrix3f(normal),
+					renderType,
+					minX,
+					minY,
+					maxX,
+					maxY,
+					blitOffset,
+					color,
+					0,
+					0
+			);
+
+			fillDrawContexts.add(context);
+			layer			.add(context);
+		} else {
+			var highestDepth = depthLayers	.lastFloatKey	();
+			var highestLayer = depthLayers	.get			(highestDepth);
+			var elementLayer = getLayer						(highestDepth + highestLayer.getLayerThickness());
+
+			var originalDepth = getGlobalDepth(
+					transform.m22(),
+					transform.m32(),
+					blitOffset
+			);
+
+			var context = new FillDrawContext(
+					new Matrix4f				(transform).translateLocal(0.0f, 0.0f, elementLayer.getLayerDepth() - originalDepth),
+					new Matrix3f				(normal),
+					RenderTypeUtils.withDepth	(renderType),
+					minX,
+					minY,
+					maxX,
+					maxY,
+					0,
+					color,
+					0,
+					0
+			);
+
+			fillDrawContexts.add(context);
+			elementLayer	.add(context);
+		}
 	}
 
-//	public void recordDecorator(
-//			GuiGraphics				graphics,
-//			ItemDecoratorHandler	handler,
-//			Font					font,
-//			ItemStack				itemStack,
-//			int						xOffset,
-//			int						yOffset
-//	) {
-//		var last = graphics
-//				.pose()
-//				.last();
-//
-//		decoratorDrawContexts.add(new DecoratorDrawContext(
-//				new Matrix4f(last.pose	()),
-//				new Matrix3f(last.normal()),
-//				handler,
-//				font,
-//				itemStack,
-//				xOffset,
-//				yOffset
-//		));
-//	}
+	public void submitGradient(
+			Matrix4f	transform,
+			Matrix3f	normal,
+			RenderType	renderType,
+			int			minX,
+			int			minY,
+			int			maxX,
+			int			maxY,
+			int			blitOffset,
+			int			colorFrom,
+			int			colorTo
+	) {
+		if (RenderTypeUtils.hasDepth(renderType)) {
+			var layer = getLayer(getGlobalDepth(
+					transform.m22(),
+					transform.m32(),
+					blitOffset
+			));
 
-	public void recordHighlight(
-			GuiGraphics	graphics,
+			var context = new GradientDrawContext(
+					new Matrix4f(transform),
+					new Matrix3f(normal),
+					renderType,
+					minX,
+					minY,
+					maxX,
+					maxY,
+					blitOffset,
+					colorFrom,
+					colorTo,
+					0,
+					0
+			);
+
+			gradientDrawContexts.add(context);
+			layer				.add(context);
+		} else {
+			var highestDepth = depthLayers	.lastFloatKey	();
+			var highestLayer = depthLayers	.get			(highestDepth);
+			var elementLayer = getLayer						(highestDepth + highestLayer.getLayerThickness());
+
+			var originalDepth = getGlobalDepth(
+					transform.m22(),
+					transform.m32(),
+					blitOffset
+			);
+
+			var context = new GradientDrawContext(
+					new Matrix4f				(transform).translateLocal(0.0f, 0.0f, elementLayer.getLayerDepth() - originalDepth),
+					new Matrix3f				(normal),
+					RenderTypeUtils.withDepth	(renderType),
+					minX,
+					minY,
+					maxX,
+					maxY,
+					0,
+					colorFrom,
+					colorTo,
+					0,
+					0
+			);
+
+			gradientDrawContexts.add(context);
+			elementLayer		.add(context);
+		}
+	}
+
+	public void submitHighlight(
+			Matrix4f	transform,
+			Matrix3f	normal,
 			int			highlightX,
 			int			highlightY,
 			int			blitOffset,
 			int			color
 	) {
-		var last = graphics
-				.pose()
-				.last();
+		var layer = getLayer(getGlobalDepth(
+				transform.m22(),
+				transform.m32(),
+				blitOffset
+		));
 
-		highlightDrawContexts.add(new HighlightDrawContext(
-				new Matrix4f(last.pose	()),
-				new Matrix3f(last.normal()),
+		var context = new HighlightDrawContext(
+				new Matrix4f(transform),
+				new Matrix3f(normal),
 				highlightX,
 				highlightY,
 				blitOffset,
 				color
+		);
+
+		highlightDrawContexts	.add(context);
+		layer					.add(context);
+	}
+
+	public void submitString(IStringDrawContext context) {
+		var layer = getLayer(getGlobalDepth(
+				context.transform().m22(),
+				context.transform().m32(),
+				0.0f
 		));
+
+		stringDrawContexts	.add(context);
+		layer				.add(context);
+	}
+
+	private Layer getLayer(float depth) {
+		var layer = depthLayers.get(depth);
+
+		if (layer == null) {
+			layer = new Layer(depth);
+		}
+
+		return layer;
+	}
+
+	public static float getGlobalDepth(
+			float m22,
+			float m32,
+			float localDepth
+	) {
+		return m22 * localDepth + m32;
 	}
 
 	public void delete() {
 		scissorDraw	.delete();
 		scissorFlush.delete();
+	}
+
+	@Getter
+	public class Layer {
+
+		private final	List<IGuiElementContext>	layerElements;
+		private final	float						layerDepth;
+		private			float						layerThickness;
+
+		public Layer(float depth) {
+			this.layerElements	= new ReferenceArrayList<>();
+			this.layerDepth		= depth;
+			this.layerThickness	= 0.0f;
+
+			depthLayers.put(depth, this);
+		}
+
+		public void add(IGuiElementContext context) {
+			layerElements.add(context);
+			layerThickness = Math.max(layerThickness, context.thickness());
+		}
 	}
 }

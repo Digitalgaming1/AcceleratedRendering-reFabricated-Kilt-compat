@@ -8,34 +8,40 @@ import com.github.argon4w.acceleratedrendering.core.backends.states.buffers.Buff
 import com.github.argon4w.acceleratedrendering.core.backends.states.buffers.cache.BlockBufferBindingCacheType;
 import com.github.argon4w.acceleratedrendering.core.backends.states.scissors.ScissorBindingStateType;
 import com.github.argon4w.acceleratedrendering.core.backends.states.viewports.ViewportBindingStateType;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.draw.DrawMethodType;
+import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.draw.IDrawMethod;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.storage.ILayerStorage;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.storage.LayerStorageType;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.meshes.IMeshInfoCache;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.meshes.MeshInfoCacheType;
-import com.github.argon4w.acceleratedrendering.core.buffers.memory.IMemoryLayout;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.IMeshData;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshMergeType;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.IMeshCollector;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.MeshCollectorType;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.cache.IMeshDataCache;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.cache.MeshDataCacheType;
 import com.github.argon4w.acceleratedrendering.core.programs.ComputeShaderProgramLoader;
+import com.github.argon4w.acceleratedrendering.core.utils.AvailabilityUtils;
 import com.github.argon4w.acceleratedrendering.core.utils.PackedVector2i;
 import com.google.common.util.concurrent.Runnables;
-import com.mojang.blaze3d.vertex.VertexFormatElement;
+import net.minecraft.client.Minecraft;
 
 import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class CoreFeature {
 
 	private static final	ArrayDeque<FeatureStatus>	FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK	= new ArrayDeque<>();
-	private static final	ArrayDeque<FeatureStatus>	CACHE_IDENTICAL_POSE_CONTROLLER_STACK			= new ArrayDeque<>();
 	private static final	ArrayDeque<Integer>			DEFAULT_LAYER_CONTROLLER_STACK					= new ArrayDeque<>();
 	private static final	ArrayDeque<Runnable>		DEFAULT_LAYER_BEFORE_FUNCTION_CONTROLLER_STACK	= new ArrayDeque<>();
 	private static final	ArrayDeque<Runnable>		DEFAULT_LAYER_AFTER_FUNCTION_CONTROLLER_STACK	= new ArrayDeque<>();
+	private static final	Deque<FeatureStatus>		BYPASS_GUI_BATCHING_CONTROLLER_STACK			= new ArrayDeque<>();
 	private static 			boolean						RENDERING_LEVEL									= false;
 	private static			boolean						RENDERING_HAND									= false;
 	private static			boolean						RENDERING_GUI									= false;
 	private static			boolean						GUI_BATCHING									= false;
 
 	public static boolean isLoaded() {
-		return ComputeShaderProgramLoader.isProgramsLoaded();
+		return isConfigLoaded() && AvailabilityUtils.isAvailable() && ComputeShaderProgramLoader.isProgramsLoaded();
 	}
 
 	public static boolean isConfigLoaded() {
@@ -44,6 +50,10 @@ public class CoreFeature {
 
 	public static boolean isDebugContextEnabled() {
 		return FeatureConfig.CONFIG.coreDebugContextEnabled.get() == FeatureStatus.ENABLED;
+	}
+
+	public static int getSparseThreshold() {
+		return FeatureConfig.CONFIG.coreSparseThreshold.get();
 	}
 
 	public static int getPooledRingBufferSize() {
@@ -66,8 +76,16 @@ public class CoreFeature {
 		return getForceTranslucentAccelerationSetting() == FeatureStatus.ENABLED;
 	}
 
-	public static boolean shouldCacheIdenticalPose() {
-		return getCacheIdenticalPoseSetting() == FeatureStatus.ENABLED;
+	public static boolean shouldByPassGuiBatching() {
+		return getBypassGuiBatchingSetting() == FeatureStatus.ENABLED;
+	}
+
+	public static DrawMethodType getDrawMethodType() {
+		return FeatureConfig.CONFIG.coreDrawMethodType.get();
+	}
+
+	public static MeshCollectorType getMeshCollectorType() {
+		return FeatureConfig.CONFIG.coreMeshCollectorType.get();
 	}
 
 	public static MeshInfoCacheType getMeshInfoCacheType() {
@@ -78,12 +96,8 @@ public class CoreFeature {
 		return FeatureConfig.CONFIG.coreLayerStorageType.get();
 	}
 
-	public static MeshMergeType getMeshMergeType() {
+	public static MeshDataCacheType getMeshMergeType() {
 		return FeatureConfig.CONFIG.coreMeshMergeType.get();
-	}
-
-	public static boolean shouldUploadMeshImmediately() {
-		return FeatureConfig.CONFIG.coreUploadMeshImmediately.get() == FeatureStatus.ENABLED;
 	}
 
 	public static boolean shouldCacheDynamicRenderType() {
@@ -122,6 +136,14 @@ public class CoreFeature {
 		return FeatureConfig.CONFIG.restoringAtomicCounterRange.get();
 	}
 
+	public static IDrawMethod getDrawMethod() {
+		return getDrawMethodType().get();
+	}
+
+	public static IMeshCollector createMeshCollector(IAcceleratedVertexConsumer consumer) {
+		return getMeshCollectorType().create(consumer);
+	}
+
 	public static IMeshInfoCache createMeshInfoCache() {
 		return getMeshInfoCacheType().create();
 	}
@@ -130,8 +152,8 @@ public class CoreFeature {
 		return getLayerStorageType().create(getPooledBatchingSize());
 	}
 
-	public static IMeshData createMeshData(IMemoryLayout<VertexFormatElement> layout) {
-		return getMeshMergeType().create(layout);
+	public static IMeshDataCache createMeshDataCache() {
+		return getMeshMergeType().create();
 	}
 
 	public static IBindingState createViewportState() {
@@ -166,28 +188,28 @@ public class CoreFeature {
 		FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.push(FeatureStatus.DISABLED);
 	}
 
-	public static void disableCacheIdenticalPose() {
-		CACHE_IDENTICAL_POSE_CONTROLLER_STACK.push(FeatureStatus.DISABLED);
+	public static void disableBypassGuiBatching() {
+		BYPASS_GUI_BATCHING_CONTROLLER_STACK.push(FeatureStatus.DISABLED);
 	}
 
 	public static void forceEnableForceTranslucentAcceleration() {
 		FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
 	}
 
-	public static void forceEnableCacheIdenticalPose() {
-		CACHE_IDENTICAL_POSE_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
+	public static void forceBypassGuiItemBatching() {
+		BYPASS_GUI_BATCHING_CONTROLLER_STACK.push(FeatureStatus.ENABLED);
 	}
 
 	public static void forceSetForceTranslucentAcceleration(FeatureStatus status) {
 		FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.push(status);
 	}
 
-	public static void forceSetCacheIdenticalPose(FeatureStatus status) {
-		CACHE_IDENTICAL_POSE_CONTROLLER_STACK.push(status);
-	}
-
 	public static void forceSetDefaultLayer(int defaultLayer) {
 		DEFAULT_LAYER_CONTROLLER_STACK.push(defaultLayer);
+	}
+
+	public static void forceIncrementDefaultLayer() {
+		DEFAULT_LAYER_CONTROLLER_STACK.push(getDefaultLayer() + 1);
 	}
 
 	public static void forceSetDefaultLayerBeforeFunction(Runnable runnable) {
@@ -198,12 +220,12 @@ public class CoreFeature {
 		DEFAULT_LAYER_AFTER_FUNCTION_CONTROLLER_STACK.push(runnable);
 	}
 
-	public static void resetForceTranslucentAcceleration() {
-		FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.pop();
+	public static void forceSetBypassGuiBatching(FeatureStatus status) {
+		BYPASS_GUI_BATCHING_CONTROLLER_STACK.push(status);
 	}
 
-	public static void resetCacheIdenticalPose() {
-		CACHE_IDENTICAL_POSE_CONTROLLER_STACK.pop();
+	public static void resetForceTranslucentAcceleration() {
+		FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.pop();
 	}
 
 	public static void resetDefaultLayer() {
@@ -218,12 +240,12 @@ public class CoreFeature {
 		DEFAULT_LAYER_AFTER_FUNCTION_CONTROLLER_STACK.pop();
 	}
 
-	public static FeatureStatus getForceTranslucentAccelerationSetting() {
-		return FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.isEmpty() ? getDefaultForceTranslucentAccelerationSetting() : FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.peek();
+	public static void resetBypassGuiBatching() {
+		BYPASS_GUI_BATCHING_CONTROLLER_STACK.pop();
 	}
 
-	public static FeatureStatus getCacheIdenticalPoseSetting() {
-		return CACHE_IDENTICAL_POSE_CONTROLLER_STACK.isEmpty() ? getDefaultCacheIdenticalPoseSetting() : CACHE_IDENTICAL_POSE_CONTROLLER_STACK.peek();
+	public static FeatureStatus getForceTranslucentAccelerationSetting() {
+		return FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.isEmpty() ? getDefaultForceTranslucentAccelerationSetting() : FORCE_TRANSLUCENT_ACCELERATION_CONTROLLER_STACK.peek();
 	}
 
 	public static int getDefaultLayer() {
@@ -242,8 +264,8 @@ public class CoreFeature {
 		return FeatureConfig.CONFIG.coreForceTranslucentAcceleration.get();
 	}
 
-	public static FeatureStatus getDefaultCacheIdenticalPoseSetting() {
-		return FeatureConfig.CONFIG.coreCacheIdenticalPose.get();
+	public static FeatureStatus getBypassGuiBatchingSetting() {
+		return BYPASS_GUI_BATCHING_CONTROLLER_STACK.isEmpty() ? FeatureStatus.DISABLED : BYPASS_GUI_BATCHING_CONTROLLER_STACK.peek();
 	}
 
 	public static void setRenderingLevel() {

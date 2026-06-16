@@ -1,12 +1,14 @@
 package com.github.argon4w.acceleratedrendering.features.items.mixins.models;
 
+import com.github.argon4w.acceleratedrendering.core.CoreFeature;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IBufferGraph;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.VertexConsumerExtension;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.renderers.IAcceleratedRenderer;
 import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.CulledMeshCollector;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.IMeshData;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.IMeshCollector;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshData;
 import com.github.argon4w.acceleratedrendering.core.utils.DirectionUtils;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
 import com.github.argon4w.acceleratedrendering.features.items.IAcceleratedBakedModel;
@@ -44,7 +46,7 @@ public abstract class SimpleBakedModelMixin implements IAcceleratedBakedModel, I
 	@Shadow public abstract List<BakedQuad> getQuads(BlockState pState, Direction pDirection, RandomSource pRandom);
 
 	@Unique private final Map<IBufferGraph,	Int2ObjectMap<IMesh>>	meshes = new Object2ObjectOpenHashMap<>();
-	@Unique private final Map<IMeshData,	IMesh>					merges = new Object2ObjectOpenHashMap<>();
+	@Unique private final Map<MeshData,		IMesh>					merges = new Object2ObjectOpenHashMap<>();
 
 	@Unique
 	@Override
@@ -122,26 +124,32 @@ public abstract class SimpleBakedModelMixin implements IAcceleratedBakedModel, I
 			return;
 		}
 
-		var culledMeshCollectors	= new Int2ObjectOpenHashMap	<CulledMeshCollector>	();
-		layers 						= new Int2ObjectAVLTreeMap	<>						();
+		var meshMinLayer	= 0;
+		var meshCollectors	= new Int2ObjectAVLTreeMap<IMeshCollector>	();
+		layers 				= new Int2ObjectAVLTreeMap<>				();
 
 		meshes.put(extension, layers);
 
 		for (var direction : DirectionUtils.FULL) {
-			for (var quad : getQuads(
+			for (var bakedQuad : getQuads(
 					null,
 					direction,
 					randomSource
 			)) {
-				var culledMeshCollector = culledMeshCollectors.get(quad.getTintIndex());
+				var meshLayer		= bakedQuad		.getTintIndex	();
+				var meshCollector	= meshCollectors.get			(meshLayer);
 
-				if (culledMeshCollector == null) {
-					culledMeshCollector = new CulledMeshCollector	(extension);
-					culledMeshCollectors.put						(quad.getTintIndex(), culledMeshCollector);
+				if (meshMinLayer > meshLayer) {
+					meshMinLayer = meshLayer;
 				}
 
-				var meshBuilder = extension	.decorate	(culledMeshCollector);
-				var data		= quad		.getVertices();
+				if (meshCollector == null) {
+					meshCollector = CoreFeature.createMeshCollector	(extension);
+					meshCollectors.put								(meshLayer, meshCollector);
+				}
+
+				var meshBuilder = extension	.decorate	(meshCollector);
+				var data		= bakedQuad	.getVertices();
 
 				for (int i = 0; i < data.length / 8; i++) {
 					var vertexOffset	= i				* IQuadTransformer.STRIDE;
@@ -158,9 +166,9 @@ public abstract class SimpleBakedModelMixin implements IAcceleratedBakedModel, I
 					float normalZ = ((byte) ((packedNormal >> 16) & 0xFF)) / 127.0f;
 
 					if (normalX == 0 && normalY == 0 && normalZ == 0) {
-						normalX = quad.getDirection().getNormal().getX();
-						normalY = quad.getDirection().getNormal().getY();
-						normalZ = quad.getDirection().getNormal().getZ();
+						normalX = bakedQuad.getDirection().getNormal().getX();
+						normalY = bakedQuad.getDirection().getNormal().getY();
+						normalZ = bakedQuad.getDirection().getNormal().getZ();
 					}
 
 					meshBuilder.vertex(
@@ -183,14 +191,20 @@ public abstract class SimpleBakedModelMixin implements IAcceleratedBakedModel, I
 			}
 		}
 
-		for (int layer : culledMeshCollectors.keySet()) {
-			var culledMeshCollector = culledMeshCollectors.get(layer);
+		var base = 0;
 
-			culledMeshCollector.flush();
+		if (meshMinLayer < 0) {
+			base = -meshMinLayer;
+		}
 
-			var data	= culledMeshCollector	.getData	();
-			var buffer	= culledMeshCollector	.getBuffer	();
-			var mesh	= merges				.get		(data);
+		for (int layer : meshCollectors.keySet()) {
+			var meshCollector = meshCollectors.get(layer);
+
+			meshCollector.flush();
+
+			var data	= meshCollector	.getData	();
+			var buffer	= meshCollector	.getBuffer	();
+			var mesh	= merges		.get		(data);
 
 			if (mesh != null) {
 				buffer.close();
@@ -198,7 +212,11 @@ public abstract class SimpleBakedModelMixin implements IAcceleratedBakedModel, I
 				mesh = AcceleratedEntityRenderingFeature
 						.getMeshType()
 						.getBuilder	()
-						.build		(culledMeshCollector);
+						.build		(
+								meshCollector,
+								false,
+								base + layer
+						);
 			}
 
 			layers	.put	(layer, mesh);

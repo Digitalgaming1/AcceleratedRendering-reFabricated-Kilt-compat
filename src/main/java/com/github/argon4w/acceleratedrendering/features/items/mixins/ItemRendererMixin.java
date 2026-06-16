@@ -7,7 +7,6 @@ import com.github.argon4w.acceleratedrendering.features.items.AcceleratedItemRen
 import com.github.argon4w.acceleratedrendering.features.items.AcceleratedQuadsRenderer;
 import com.github.argon4w.acceleratedrendering.features.items.BakedModelExtension;
 import com.github.argon4w.acceleratedrendering.features.items.colors.ItemLayerColors;
-import com.github.argon4w.acceleratedrendering.features.items.contexts.AcceleratedQuadsRenderContext;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -21,7 +20,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
 @ExtensionMethod(value = {VertexConsumerExtension	.class, BakedModelExtension.class	})
-@Mixin			(value = {ItemRenderer				.class								})
+@Mixin			(value = {ItemRenderer				.class								}, priority = 0)
 public class ItemRendererMixin {
 
 	@SuppressWarnings	("deprecation")
@@ -45,7 +44,8 @@ public class ItemRendererMixin {
 		var extension1 = pBuffer.getAccelerated();
 		var extension2 = pModel	.getAccelerated();
 
-		if (			!		AcceleratedItemRenderingFeature	.isEnabled						()
+		if (			!		CoreFeature						.isLoaded						()
+				||		!		AcceleratedItemRenderingFeature	.isEnabled						()
 				||		!		AcceleratedItemRenderingFeature	.shouldUseAcceleratedPipeline	()
 				||	(	!		CoreFeature						.isRenderingLevel				()
 
@@ -70,11 +70,14 @@ public class ItemRendererMixin {
 			return;
 		}
 
+		var pose	= pPoseStack	.last	();
+		var random	= RandomSource	.create	(42L);
+
 		if (extension2.isAccelerated()) {
 			extension2.renderItemFast(
 					pStack,
-					RandomSource.create	(42L),
-					pPoseStack	.last	(),
+					random,
+					pose,
 					extension1,
 					pCombinedLight,
 					pCombinedOverlay
@@ -95,20 +98,19 @@ public class ItemRendererMixin {
 			return;
 		}
 
-		var pose			= pPoseStack	.last	();
-		var randomSource	= RandomSource	.create	();
+		var color = new ItemLayerColors(pStack);
 
 		for (var direction : DirectionUtils.FULL) {
-			randomSource.setSeed	(42L);
+			random		.setSeed	(42L);
 			extension1	.doRender	(
 					AcceleratedQuadsRenderer.INSTANCE,
-					new AcceleratedQuadsRenderContext(
+					AcceleratedQuadsRenderer.context(
 							pModel.getQuads(
 									null,
 									direction,
-									randomSource
+									random
 							),
-							new ItemLayerColors(pStack)
+							color
 					),
 					pose.pose	(),
 					pose.normal	(),

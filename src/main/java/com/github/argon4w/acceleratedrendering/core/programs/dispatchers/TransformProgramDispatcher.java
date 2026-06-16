@@ -5,7 +5,7 @@ import com.github.argon4w.acceleratedrendering.core.backends.programs.Uniform;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.AcceleratedBufferBuilder;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.pools.StagingBufferPool;
 import com.github.argon4w.acceleratedrendering.core.programs.ComputeShaderProgramLoader;
-import com.github.argon4w.acceleratedrendering.core.programs.overrides.ITransformShaderProgramOverride;
+import com.github.argon4w.acceleratedrendering.core.programs.overrides.ITransformOverride;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Collection;
@@ -19,22 +19,23 @@ public class TransformProgramDispatcher {
 	private static	final	int								GROUP_SIZE					= 128;
 	private static	final	int								DISPATCH_COUNT_Y_Z			= 1;
 
-	private					ITransformShaderProgramOverride	lastOverride;
+	private					ITransformOverride				lastOverride;
 	private					int								lastBarriers;
 
 	public TransformProgramDispatcher() {
 		this.lastOverride = null;
-		this.lastBarriers = GL_SHADER_STORAGE_BUFFER;
+		this.lastBarriers = GL_SHADER_STORAGE_BARRIER_BIT;
 	}
 
 	public void dispatch(Collection<AcceleratedBufferBuilder> builders) {
 		glMemoryBarrier(lastBarriers);
 
 		for (var builder : builders) {
-			var currentOverride	= builder			.getTransformOverride	();
-			var vertexCount		= builder			.getVertexCount			();
-			var vertexBuffer	= builder			.getVertexBuffer		();
-			var varyingBuffer	= builder			.getVaryingBuffer		();
+			var programOverride	= builder			.getProgramOverride	();
+			var vertexCount		= builder			.getVertexCount		();
+			var vertexBuffer	= builder			.getVertexBuffer	();
+			var varyingBuffer	= builder			.getVaryingBuffer	();
+			var currentOverride	= programOverride	.transform			();
 
 			if (lastOverride != currentOverride) {
 				lastOverride = currentOverride;
@@ -47,8 +48,8 @@ public class TransformProgramDispatcher {
 				varyingBuffer					.bindBase			(GL_SHADER_STORAGE_BUFFER, VARYING_BUFFER_IN_INDEX);
 				lastBarriers |= currentOverride	.dispatchTransform	(
 						vertexCount,
-						(int) (vertexBuffer	.getOffset() / builder.getVertexSize	()),
-						(int) (varyingBuffer.getOffset() / builder.getVaryingSize	())
+						(int) (builder.getVertexCountOffset	()),
+						(int) (builder.getVaryingCountOffset())
 				);
 			}
 		}
@@ -61,11 +62,12 @@ public class TransformProgramDispatcher {
 			AcceleratedBufferBuilder		builder,
 			StagingBufferPool.StagingBuffer	vertexBuffer,
 			StagingBufferPool.StagingBuffer	varyingBuffer,
+			long							inputOffset,
 			long							vertexCount,
 			long							vertexOffset,
 			long							varyingOffset
 	) {
-		var currentOverride = builder.getTransformOverride();
+		var currentOverride = builder.getProgramOverride().transform();
 
 		if (lastOverride != currentOverride) {
 			lastOverride = currentOverride;
@@ -73,10 +75,13 @@ public class TransformProgramDispatcher {
 			lastOverride.setupProgram	();
 		}
 
-		vertexBuffer			.bindBase			(GL_SHADER_STORAGE_BUFFER, VERTEX_BUFFER_IN_INDEX);
-		varyingBuffer			.bindBase			(GL_SHADER_STORAGE_BUFFER, VARYING_BUFFER_IN_INDEX);
+		var vertexSize	= builder.getVertexSize	();
+		var varyingSize	= builder.getVaryingSize();
 
-		return currentOverride	.dispatchTransform	(
+		vertexBuffer	.bindRange(GL_SHADER_STORAGE_BUFFER, VERTEX_BUFFER_IN_INDEX,	inputOffset * vertexSize,	vertexCount * vertexSize);
+		varyingBuffer	.bindRange(GL_SHADER_STORAGE_BUFFER, VARYING_BUFFER_IN_INDEX,	inputOffset * varyingSize,	vertexCount * varyingSize);
+
+		return currentOverride.dispatchTransform(
 				(int) vertexCount,
 				(int) vertexOffset,
 				(int) varyingOffset
@@ -87,7 +92,7 @@ public class TransformProgramDispatcher {
 		lastOverride = null;
 	}
 
-	public static class Default implements ITransformShaderProgramOverride {
+	public static class Default implements ITransformOverride {
 
 		private final long				varyingSize;
 		private final ComputeProgram	program;

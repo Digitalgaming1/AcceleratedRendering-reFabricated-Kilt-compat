@@ -1,11 +1,12 @@
 package com.github.argon4w.acceleratedrendering.features.geckolib.mixins;
 
+import com.github.argon4w.acceleratedrendering.core.CoreFeature;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IBufferGraph;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.VertexConsumerExtension;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.renderers.IAcceleratedRenderer;
 import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.CulledMeshCollector;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.IMeshData;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshData;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -30,11 +31,11 @@ public class GeoBoneMixin implements IAcceleratedRenderer<Void> {
 	@Shadow @Final private	List<GeoCube>				cubes;
 
 	@Unique private	final					Map<IBufferGraph,	IMesh>	meshes = new Object2ObjectOpenHashMap<>();
-	@Unique private final					Map<IMeshData,		IMesh>	merges = new Object2ObjectOpenHashMap<>();
+	@Unique private final					Map<MeshData,		IMesh>	merges = new Object2ObjectOpenHashMap<>();
 
 	@Override
 	public void render(
-			VertexConsumer vertexConsumer,
+			VertexConsumer	vertexConsumer,
 			Void			context,
 			Matrix4f		transform,
 			Matrix3f		normal,
@@ -59,8 +60,8 @@ public class GeoBoneMixin implements IAcceleratedRenderer<Void> {
 			return;
 		}
 
-		var culledMeshCollector	= new CulledMeshCollector	(extension);
-		var meshBuilder			= extension.decorate		(culledMeshCollector);
+		var meshCollector	= CoreFeature	.createMeshCollector(extension);
+		var meshBuilder		= extension		.decorate			(meshCollector);
 
 		for (GeoCube cube : cubes) {
 			var poseStack = new PoseStack();
@@ -92,20 +93,20 @@ public class GeoBoneMixin implements IAcceleratedRenderer<Void> {
 								vertex			.texV(),
 								overlay,
 								0,
-								polygonNormal	.x,
-								polygonNormal	.y,
-								polygonNormal	.z
+								polygonNormal.x,
+								polygonNormal.y,
+								polygonNormal.z
 						);
 					}
 				}
 			}
 		}
 
-		culledMeshCollector.flush();
+		meshCollector.flush();
 
-		var data	= culledMeshCollector	.getData	();
-		var buffer	= culledMeshCollector	.getBuffer	();
-		mesh		= merges				.get		(data);
+		var data	= meshCollector	.getData	();
+		var buffer	= meshCollector	.getBuffer	();
+		mesh		= merges		.get		(data);
 
 		if (mesh != null) {
 			buffer.close();
@@ -113,7 +114,7 @@ public class GeoBoneMixin implements IAcceleratedRenderer<Void> {
 			mesh = AcceleratedEntityRenderingFeature
 					.getMeshType()
 					.getBuilder	()
-					.build		(culledMeshCollector);
+					.build		(meshCollector);
 		}
 
 		meshes	.put	(extension, mesh);

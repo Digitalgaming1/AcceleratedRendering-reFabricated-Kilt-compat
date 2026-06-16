@@ -1,10 +1,11 @@
 package com.github.argon4w.acceleratedrendering.features.items.mixins.models;
 
+import com.github.argon4w.acceleratedrendering.core.CoreFeature;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IBufferGraph;
 import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.CulledMeshCollector;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.IMeshData;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshData;
 import com.github.argon4w.acceleratedrendering.core.utils.FastColorUtils;
 import com.github.argon4w.acceleratedrendering.core.utils.IntArrayHashStrategy;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
@@ -27,7 +28,7 @@ import java.util.Map;
 public abstract class BakedQuadMixin implements IAcceleratedBakedQuad {
 
 	@Unique private static final	Map<int[], Map<IBufferGraph,	IMesh>>	MESHES = new Object2ObjectOpenCustomHashMap<>(IntArrayHashStrategy.INSTANCE);
-	@Unique private static final	Map<int[], Map<IMeshData,		IMesh>>	MERGES = new Object2ObjectOpenCustomHashMap<>(IntArrayHashStrategy.INSTANCE);
+	@Unique private static final	Map<int[], Map<MeshData,		IMesh>>	MERGES = new Object2ObjectOpenCustomHashMap<>(IntArrayHashStrategy.INSTANCE);
 
 	@Shadow @Final protected		int[]									vertices;
 
@@ -65,8 +66,8 @@ public abstract class BakedQuadMixin implements IAcceleratedBakedQuad {
 			return;
 		}
 
-		var culledMeshCollector	= new CulledMeshCollector	(extension);
-		var meshBuilder			= extension.decorate		(culledMeshCollector);
+		var meshCollector	= CoreFeature	.createMeshCollector(extension);
+		var meshBuilder		= extension		.decorate			(meshCollector);
 
 		for (var i = 0; i < vertices.length / 8; i++) {
 			var vertexOffset	= i				* IQuadTransformer.STRIDE;
@@ -96,11 +97,11 @@ public abstract class BakedQuadMixin implements IAcceleratedBakedQuad {
 			);
 		}
 
-		culledMeshCollector.flush();
+		meshCollector.flush();
 
-		var data	= culledMeshCollector	.getData	();
-		var buffer	= culledMeshCollector	.getBuffer	();
-		mesh		= merges				.get		(data);
+		var data	= meshCollector	.getData	();
+		var buffer	= meshCollector	.getBuffer	();
+		mesh		= merges		.get		(data);
 
 		if (mesh != null) {
 			buffer.close();
@@ -108,7 +109,7 @@ public abstract class BakedQuadMixin implements IAcceleratedBakedQuad {
 			mesh = AcceleratedEntityRenderingFeature
 					.getMeshType()
 					.getBuilder	()
-					.build		(culledMeshCollector);
+					.build		(meshCollector);
 		}
 
 		meshes	.put	(extension, mesh);

@@ -7,8 +7,9 @@ import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.renderer
 import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.SimpleMeshCollector;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
-import com.github.argon4w.acceleratedrendering.features.text.AcceleratedBakedGlyphRenderer;
+import com.github.argon4w.acceleratedrendering.features.text.renderers.AcceleratedBakedGlyphRenderer;
 import com.github.argon4w.acceleratedrendering.features.text.AcceleratedTextRenderingFeature;
+import com.github.argon4w.acceleratedrendering.features.text.IAcceleratedBakedGlyph;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import lombok.experimental.ExtensionMethod;
@@ -31,14 +32,15 @@ import java.util.Map;
 
 @ExtensionMethod(value = VertexConsumerExtension.class)
 @Mixin			(value = BakedGlyph				.class, priority = 0)
-public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> {
+public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect>, IAcceleratedBakedGlyph {
 
 	@Shadow @Final public			float												u0;
 	@Shadow @Final public			float												v0;
 	@Shadow @Final public			float												u1;
 	@Shadow @Final public			float												v1;
 
-	@Unique private static	final	Matrix3f											NORMAL			= new Matrix3f();
+	@Unique private static	final	Matrix4f											TRANSFORM		= new Matrix4f().identity();
+	@Unique private static	final	Matrix3f											NORMAL			= new Matrix3f().identity();
 
 	@Unique private			final	AcceleratedBakedGlyphRenderer						normalRenderer	= new AcceleratedBakedGlyphRenderer	((BakedGlyph) (Object) this, false);
 	@Unique private			final	AcceleratedBakedGlyphRenderer						italicRenderer	= new AcceleratedBakedGlyphRenderer	((BakedGlyph) (Object) this, true);
@@ -52,8 +54,8 @@ public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> 
 	@Unique
 	public void renderFast(
 			boolean			pItalic,
-			float			pX,
-			float			pY,
+			float			positionX,
+			float			positionY,
 			Matrix4f		pMatrix,
 			VertexConsumer	pBuffer,
 			float			pRed,
@@ -65,20 +67,28 @@ public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> 
 	) {
 		var extension = pBuffer.getAccelerated();
 
-		if (			AcceleratedTextRenderingFeature	.isEnabled						()
+		if (			CoreFeature						.isLoaded						()
+				&&		AcceleratedTextRenderingFeature	.isEnabled						()
 				&&		AcceleratedTextRenderingFeature	.shouldUseAcceleratedPipeline	()
 				&&	(	CoreFeature						.isRenderingLevel				()
 				||		CoreFeature						.isRenderingGui					())
 				&&		extension						.isAccelerated					()
 		) {
+			TRANSFORM.set		(pMatrix);
+			TRANSFORM.translate	(
+					positionX,
+					positionY,
+					0.0f
+			);
+
 			ci			.cancel		();
 			extension	.doRender	(
 					pItalic
 							? italicRenderer
 							: normalRenderer,
-					new Vector2f(pX, pY),
-					pMatrix,
 					null,
+					TRANSFORM,
+					NORMAL,
 					pPackedLight,
 					OverlayTexture	.NO_OVERLAY,
 					FastColor.ARGB32.color(
@@ -105,7 +115,8 @@ public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> 
 	) {
 		var extension = buffer.getAccelerated();
 
-		if (			AcceleratedTextRenderingFeature	.isEnabled						()
+		if (			CoreFeature						.isLoaded						()
+				&&		AcceleratedTextRenderingFeature	.isEnabled						()
 				&&		AcceleratedTextRenderingFeature	.shouldUseAcceleratedPipeline	()
 				&&	(	CoreFeature						.isRenderingLevel				()
 				||		CoreFeature						.isRenderingGui					())
@@ -196,10 +207,16 @@ public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> 
 					.uv2	(0);
 		}
 
-		mesh = AcceleratedTextRenderingFeature
+		var builder = AcceleratedEntityRenderingFeature
 				.getMeshType()
-				.getBuilder	()
-				.build		(meshCollector);
+				.getBuilder	();
+
+		mesh = builder.build(
+				meshCollector,
+				false,
+				true,
+				0
+		);
 
 		meshes	.put	(extension, mesh);
 		mesh	.write	(
@@ -210,5 +227,13 @@ public class BakedGlyphMixin implements IAcceleratedRenderer<BakedGlyph.Effect> 
 		);
 
 		extension.endTransform();
+	}
+
+	@Unique
+	@Override
+	public AcceleratedBakedGlyphRenderer getRenderer(boolean italic) {
+		return italic
+				? italicRenderer
+				: normalRenderer;
 	}
 }

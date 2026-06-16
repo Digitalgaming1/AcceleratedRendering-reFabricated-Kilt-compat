@@ -8,7 +8,7 @@ import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.f
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.functions.EmptyLayerFunction;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.layers.storage.empty.EmptyLayerStorage;
 import com.github.argon4w.acceleratedrendering.core.buffers.environments.IBufferEnvironment;
-import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.MeshUploadingProgramDispatcher;
+import com.github.argon4w.acceleratedrendering.core.programs.dispatchers.meshes.MeshUploadingProgramDispatcher;
 import com.github.argon4w.acceleratedrendering.core.utils.RenderTypeUtils;
 import com.github.argon4w.acceleratedrendering.core.utils.ShaderUtils;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -111,7 +111,7 @@ public class AcceleratedBufferSource implements IAcceleratedBufferSource {
 				elementSegment,
 				currentBuffer,
 				function,
-				renderType
+				layerKey
 		);
 
 		used = true;
@@ -131,15 +131,15 @@ public class AcceleratedBufferSource implements IAcceleratedBufferSource {
 		}
 
 		for (var buffer : buffers) {
-			var builders	= buffer.getBuilders();
-			var program		= glGetInteger		(GL_CURRENT_PROGRAM);
+			var elementBuffer	= buffer.getElementBuffer	();
+			var builders		= buffer.getBuilders		();
+			var program			= glGetInteger				(GL_CURRENT_PROGRAM);
 
 			if (builders.isEmpty()) {
 				continue;
 			}
 
-			environment.getImmediateMeshBuffer				().bindBase	(GL_SHADER_STORAGE_BUFFER,	MeshUploadingProgramDispatcher.SPARSE_MESH_BUFFER_INDEX);
-			environment.selectMeshUploadingProgramDispatcher().dispatch	(builders.values(),			buffer);
+			environment.selectMeshUploadingProgramDispatcher().dispatch	(builders.values(), buffer);
 			environment.selectTransformProgramDispatcher	().dispatch	(builders.values());
 
 			glMemoryBarrier(barriers);
@@ -157,11 +157,15 @@ public class AcceleratedBufferSource implements IAcceleratedBufferSource {
 				var layer			= layerKey			.layer				();
 				var drawType		= RenderTypeUtils	.getDrawType		(renderType);
 
-				builder									.setOutdated		();
-				elementSegment							.allocateOffset		();
-				buffer									.bindElementBuffer	(elementSegment);
-				drawContext								.bindComputeBuffers	(elementSegment);
-				drawContext								.setRenderType		(renderType);
+				builder			.setOutdated();
+				elementSegment	.setup		();
+
+				drawContext.setupContext(
+						builder,
+						elementSegment,
+						elementBuffer,
+						renderType
+				);
 
 				buffer
 						.getLayers	()
@@ -202,8 +206,9 @@ public class AcceleratedBufferSource implements IAcceleratedBufferSource {
 				function		.runBefore		();
 
 				for (var drawContext : contexts) {
-					var renderType	= drawContext	.getRenderType		();
-					renderType						.setupRenderState	();
+					var renderType = drawContext.getRenderType();
+
+					renderType.setupRenderState();
 
 					var mode	= renderType	.mode();
 					var shader	= RenderSystem	.getShader();
@@ -240,10 +245,12 @@ public class AcceleratedBufferSource implements IAcceleratedBufferSource {
 		}
 
 		used			= false;
-		currentBuffer	= ringBuffers	.get	(false);
-		activeBuilders					.clear	();
-		activeLayers					.clear	();
-		buffers							.clear	();
-		buffers							.add	(currentBuffer);
+		currentBuffer	= ringBuffers.get(false);
+
+		environment		.clear	();
+		activeBuilders	.clear	();
+		activeLayers	.clear	();
+		buffers			.clear	();
+		buffers			.add	(currentBuffer);
 	}
 }

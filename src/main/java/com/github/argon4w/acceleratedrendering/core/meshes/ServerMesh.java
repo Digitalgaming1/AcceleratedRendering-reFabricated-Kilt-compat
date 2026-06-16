@@ -6,9 +6,9 @@ import com.github.argon4w.acceleratedrendering.core.backends.buffers.EmptyServer
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.IServerBuffer;
 import com.github.argon4w.acceleratedrendering.core.backends.buffers.MappedBuffer;
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders.IAcceleratedVertexConsumer;
-import com.github.argon4w.acceleratedrendering.core.buffers.memory.IMemoryLayout;
+import com.github.argon4w.acceleratedrendering.core.buffers.memory.VertexLayout;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.IMeshCollector;
-import com.mojang.blaze3d.vertex.VertexFormatElement;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.cache.MeshDataCaches;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
@@ -20,8 +20,10 @@ import org.lwjgl.system.MemoryUtil;
 import java.util.List;
 
 public record ServerMesh(
+		int				meshLayer,
+		int				meshId,
 		int				size,
-		long			offset,
+		int				offset,
 		boolean			forceDense,
 		IServerBuffer	meshBuffer
 ) implements IMesh {
@@ -41,15 +43,24 @@ public record ServerMesh(
 		);
 	}
 
+	public boolean isDense(int count) {
+		return forceDense || count >= CoreFeature.getSparseThreshold();
+	}
+
 	public static class Builder implements IMesh.Builder {
 
-		public static final Builder																			INSTANCE;
-		public static final Reference2ObjectMap<IMemoryLayout<VertexFormatElement>, List<IServerBuffer>>	BUFFERS;
+		public static final Builder													INSTANCE;
+		public static final Reference2ObjectMap<VertexLayout, List<IServerBuffer>>	NORMAL_BUFFERS;
+		public static final Reference2ObjectMap<VertexLayout, List<IServerBuffer>>	RELOAD_BUFFERS;
+		public static		int														COUNTER;
 
 		static {
-			INSTANCE	= new Builder						();
-			BUFFERS		= new Reference2ObjectOpenHashMap<>	();
-			BUFFERS.defaultReturnValue						(ReferenceLists.singleton(EmptyServerBuffer.INSTANCE));
+			INSTANCE		= new Builder						();
+			NORMAL_BUFFERS	= new Reference2ObjectOpenHashMap<>	();
+			RELOAD_BUFFERS	= new Reference2ObjectOpenHashMap<>	();
+
+			NORMAL_BUFFERS.defaultReturnValue(ReferenceLists.singleton(EmptyServerBuffer.INSTANCE));
+			RELOAD_BUFFERS.defaultReturnValue(ReferenceLists.singleton(EmptyServerBuffer.INSTANCE));
 		}
 
 		private Builder() {
@@ -57,74 +68,107 @@ public record ServerMesh(
 		}
 
 		@Override
-		public IMesh build(IMeshCollector collector, boolean forceDense) {
-			var vertexCount = collector.getVertexCount();
+		public IMesh build(
+				IMeshCollector	collector,
+				boolean			forceDense,
+				boolean			reloadSensitive,
+				int				meshLayer
+		) {
+			var vertexCount	= collector.getVertexCount();
 
 			if (vertexCount == 0) {
 				return EmptyMesh.INSTANCE;
 			}
 
-			var builder	= collector	.getBuffer	();
-			var result	= builder	.build		();
+			var builder	= collector				.getBuffer	();
+			var layout	= collector				.getLayout	();
+			var data	= collector				.getData	();
+			var mesh	= MeshDataCaches.SERVER	.get		(layout, data);
+
+			if (mesh != null) {
+				builder.close();
+				return mesh;
+			}
+
+			var result = builder.build();
 
 			if (result == null) {
 				builder.close();
 				return EmptyMesh.INSTANCE;
 			}
 
-			var clientBuffer	= result		.byteBuffer		();
-			var capacity		= clientBuffer	.capacity		();
-			var layout			= collector		.getLayout		();
-			var meshBuffers		= BUFFERS		.getOrDefault	(layout, null);
-			var meshBuffer		= (MappedBuffer) null;
+			var buffers = reloadSensitive
+					? RELOAD_BUFFERS
+					: NORMAL_BUFFERS;
+
+			var buffer		= result	.byteBuffer		();
+			var capacity	= buffer	.capacity		();
+			var meshBuffers	= buffers	.getOrDefault	(layout, null);
+
+			var meshBuffer = (MappedBuffer) null;
 
 			if (meshBuffers == null) {
+				meshBuffers	= new ReferenceArrayList<>	();
 				meshBuffer	= new MappedBuffer			(64L);
-				meshBuffers = new ReferenceArrayList<>	();
 				meshBuffers	.add						(meshBuffer);
-				BUFFERS		.put 						(layout, meshBuffers);
+				buffers		.put						(layout, meshBuffers);
 			} else {
 				meshBuffer	= (MappedBuffer) meshBuffers.get(meshBuffers.size() - 1);
 			}
 
-			if (meshBuffer.getPosition() + capacity >= GLConstants.MAX_SHADER_STORAGE_BLOCK_SIZE) {
-				if (CoreFeature.shouldUploadMeshImmediately()) {
-					collector
-							.getBuffer	()
-							.close		();
+			if (meshBuffer.overflow(capacity)) {
+				meshBuffer = new MappedBuffer(64L);
 
-					var crashReport	= CrashReport	.forThrowable	(new OutOfMemoryError("Mesh buffer size exceeds limits."), "Exception in building meshes.");
-					var category	= crashReport	.addCategory	("Mesh being built");
-
-					category						.setDetail		("Mesh type",					"Server side mesh");
-					category						.setDetail		("Mesh size (vertices)",		collector				.getVertexCount	());
-					category						.setDetail		("Mesh layout size (bytes)",	collector.getLayout()	.getSize		());
-					category						.setDetail		("Mesh buffer limits (bytes)",	GLConstants				.MAX_SHADER_STORAGE_BLOCK_SIZE);
-
-					throw new ReportedException(crashReport);
-				}
-
-				meshBuffer = new MappedBuffer	(64L);
-				meshBuffers.add					(meshBuffer);
+				meshBuffers.add(meshBuffer);
 			}
 
 			var position	= meshBuffer.getPosition();
-			var srcAddress	= MemoryUtil.memAddress0(clientBuffer);
+			var srcAddress	= MemoryUtil.memAddress0(buffer);
 			var destAddress	= meshBuffer.reserve	(capacity);
 
-			MemoryUtil	.memCopy(
+			MemoryUtil.memCopy(
 					srcAddress,
 					destAddress,
 					capacity
 			);
-			builder		.close	();
 
-			return new ServerMesh(
+			builder.close();
+
+			mesh = new ServerMesh(
+					meshLayer,
+					COUNTER ++,
 					vertexCount,
-					position / layout.getSize(),
+					(int) (position / layout.getSize()),
 					forceDense,
 					meshBuffer
 			);
+
+			MeshDataCaches.SERVER.set(
+					layout,
+					data,
+					mesh
+			);
+
+			return mesh;
+		}
+
+		@Override
+		public IMesh build(
+				IMeshCollector	collector,
+				boolean			forceDense,
+				int				meshLayer
+		) {
+			return build(
+					collector,
+					forceDense,
+					false,
+					meshLayer
+			);
+		}
+
+		@Override
+		public IMesh build(IMeshCollector collector, boolean forceDense) {
+			return build(collector, forceDense, 0);
 		}
 
 		@Override
@@ -134,11 +178,13 @@ public record ServerMesh(
 
 		@Override
 		public void delete() {
-			for (		var buffers	: BUFFERS.values()) {
-				for (	var buffer	: buffers) {
-					buffer.delete();
-				}
-			}
+			for (var buffers : NORMAL_BUFFERS.values()) for (var buffer : buffers) buffer.delete();
+			for (var buffers : RELOAD_BUFFERS.values()) for (var buffer : buffers) buffer.delete();
+		}
+
+		@Override
+		public void reload() {
+			for (var buffers : RELOAD_BUFFERS.values()) for (var buffer : buffers) ((MappedBuffer) buffer).reset();
 		}
 	}
 }

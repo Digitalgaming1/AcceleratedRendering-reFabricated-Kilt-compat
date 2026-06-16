@@ -7,8 +7,10 @@ import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.builders
 import com.github.argon4w.acceleratedrendering.core.buffers.accelerated.renderers.IAcceleratedRenderer;
 import com.github.argon4w.acceleratedrendering.core.meshes.IMesh;
 import com.github.argon4w.acceleratedrendering.core.meshes.collectors.CulledMeshCollector;
-import com.github.argon4w.acceleratedrendering.core.meshes.data.IMeshData;
+import com.github.argon4w.acceleratedrendering.core.meshes.collectors.SimpleMeshCollector;
+import com.github.argon4w.acceleratedrendering.core.meshes.data.MeshData;
 import com.github.argon4w.acceleratedrendering.features.entities.AcceleratedEntityRenderingFeature;
+import com.github.argon4w.acceleratedrendering.features.mods.ModsFeature;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
@@ -28,15 +30,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 import java.util.Map;
 
-@SuppressWarnings	("unchecked")
-@ExtensionMethod	(VertexConsumerExtension.class)
-@Mixin				(ModelPart				.class)
+@ExtensionMethod	(value = VertexConsumerExtension.class)
+@Mixin				(value = ModelPart				.class, priority = 800)
 public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 
 	@Shadow @Final public	List<ModelPart.Cube>		cubes;
 
 	@Unique private final	Map<IBufferGraph,	IMesh>	meshes = new Object2ObjectOpenHashMap<>();
-	@Unique private final	Map<IMeshData,		IMesh>	merges = new Object2ObjectOpenHashMap<>();
+	@Unique private final	Map<MeshData,		IMesh>	merges = new Object2ObjectOpenHashMap<>();
 
 	@Inject(
 			method		= "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;IIFFFF)V",
@@ -58,6 +59,8 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 
 		if (			AcceleratedEntityRenderingFeature	.isEnabled						()
 				&&		AcceleratedEntityRenderingFeature	.shouldUseAcceleratedPipeline	()
+				&&		ModsFeature							.isEnabled						()
+				&&		ModsFeature							.shouldAccelerateVanilla		()
 				&&	(	CoreFeature							.isRenderingLevel				()
 				||	(	CoreFeature							.isRenderingGui					()
 				&&		AcceleratedEntityRenderingFeature	.shouldAccelerateInGui			()))
@@ -81,7 +84,7 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 		}
 	}
 
-	/*@Inject(
+	@Inject(
 			method		= "compile",
 			at			= @At("HEAD"),
 			cancellable	= true
@@ -99,8 +102,11 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 	) {
 		var extension = pBuffer.getAccelerated();
 
-		if (			AcceleratedEntityRenderingFeature	.isEnabled						()
+		if (			CoreFeature							.isLoaded						()
+				&&		AcceleratedEntityRenderingFeature	.isEnabled						()
 				&&		AcceleratedEntityRenderingFeature	.shouldUseAcceleratedPipeline	()
+				&&		ModsFeature							.isEnabled						()
+				&&		ModsFeature							.shouldAccelerateVanilla		()
 				&&	(	CoreFeature							.isRenderingLevel				()
 				||	(	CoreFeature							.isRenderingGui					()
 				&&		AcceleratedEntityRenderingFeature	.shouldAccelerateInGui			()))
@@ -122,7 +128,7 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 					)
 			);
 		}
-	}*/
+	}
 
 	@Unique
 	@Override
@@ -152,8 +158,8 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 			return;
 		}
 
-		var culledMeshCollector	= new CulledMeshCollector	(extension);
-		var meshBuilder			= extension.decorate		(culledMeshCollector);
+		var meshCollector	= CoreFeature	.createMeshCollector(extension);
+		var meshBuilder		= extension		.decorate			(meshCollector);
 
 		for (var cube : cubes) {
 			for (var polygon : cube.polygons) {
@@ -182,11 +188,11 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 			}
 		}
 
-		culledMeshCollector.flush();
+		meshCollector.flush();
 
-		var data	= culledMeshCollector	.getData	();
-		var buffer	= culledMeshCollector	.getBuffer	();
-		mesh		= merges				.get		(data);
+		var data	= meshCollector	.getData	();
+		var buffer	= meshCollector	.getBuffer	();
+		mesh		= merges		.get		(data);
 
 		if (mesh != null) {
 			buffer.close();
@@ -194,7 +200,7 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 			mesh = AcceleratedEntityRenderingFeature
 					.getMeshType()
 					.getBuilder	()
-					.build		(culledMeshCollector);
+					.build		(meshCollector);
 		}
 
 		meshes	.put	(extension, mesh);
@@ -210,6 +216,7 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 	}
 
 	@Unique
+	@SuppressWarnings("unchecked")
 	private static void renderFast(
 			ModelPart					modelPart,
 			PoseStack					poseStack,
@@ -233,11 +240,13 @@ public class ModelPartMixin implements IAcceleratedRenderer<Void> {
 		modelPart.translateAndRotate(poseStack);
 
 		if (!modelPart.skipDraw) {
+			var last = poseStack.last();
+
 			extension.doRender(
 					(IAcceleratedRenderer<Void>) (Object) modelPart,
 					null,
-					poseStack.last().pose(),
-					poseStack.last().normal(),
+					last.pose	(),
+					last.normal	(),
 					packedLight,
 					packedOverlay,
 					packedColor

@@ -9,6 +9,7 @@
     "accessors.BlockColorsAccessor",
     "accessors.ItemColorsAccessor",
     "gui.AbstractContainerScreenMixin",
+    "gui.FontMixin",
     "gui.GuiGraphicsMixin",
     "gui.GuiMixin",
     "models.BakedModelMixin",
