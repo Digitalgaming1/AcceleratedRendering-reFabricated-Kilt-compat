@@ -1,5 +1,6 @@
 package com.github.argon4w.acceleratedrendering.core;
 
+import com.github.argon4w.acceleratedrendering.configs.DebugRenderPath;
 import com.github.argon4w.acceleratedrendering.configs.FeatureConfig;
 import com.github.argon4w.acceleratedrendering.configs.FeatureStatus;
 import com.github.argon4w.acceleratedrendering.core.backends.states.IBindingState;
@@ -50,6 +51,18 @@ public class CoreFeature {
 
 	public static boolean isDebugContextEnabled() {
 		return FeatureConfig.CONFIG.coreDebugContextEnabled.get() == FeatureStatus.ENABLED;
+	}
+
+	public static DebugRenderPath getDebugRenderPath() {
+		return FeatureConfig.CONFIG.coreDebugRenderPath.get();
+	}
+
+	public static boolean isDebugRenderPathEnabled() {
+		return getDebugRenderPath().isEnabled();
+	}
+
+	public static int getDebugRenderPathColor(int originalColor, int debugColor) {
+		return isDebugRenderPathEnabled() ? debugColor : originalColor;
 	}
 
 	public static int getSparseThreshold() {

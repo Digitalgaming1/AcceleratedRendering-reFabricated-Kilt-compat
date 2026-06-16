@@ -187,6 +187,13 @@ public class AcceleratedBufferBuilder extends DefaultedVertexConsumer implements
 			pAlpha	= defaultA;
 		}
 
+		if (CoreFeature.isDebugRenderPathEnabled()) {
+			pRed	= 0;
+			pGreen	= 255;
+			pBlue	= 0;
+			pAlpha	= pAlpha;
+		}
+
 		colorOffset.putByte(vertexAddress + 0L, (byte) pRed);
 		colorOffset.putByte(vertexAddress + 1L, (byte) pGreen);
 		colorOffset.putByte(vertexAddress + 2L, (byte) pBlue);
@@ -278,12 +285,22 @@ public class AcceleratedBufferBuilder extends DefaultedVertexConsumer implements
 		posOffset	.putFloat	(vertexAddress + 0L,	pX);
 		posOffset	.putFloat	(vertexAddress + 4L,	pY);
 		posOffset	.putFloat	(vertexAddress + 8L,	pZ);
-		colorOffset	.putInt		(vertexAddress,			FastColor.ABGR32.color(
-				(int) (alpha	* 255.0f),
-				(int) (blue		* 255.0f),
-				(int) (green	* 255.0f),
-				(int) (red		* 255.0f)
-		));
+
+		if (CoreFeature.isDebugRenderPathEnabled()) {
+			colorOffset	.putInt(vertexAddress, FastColor.ABGR32.color(
+					(int) (alpha * 255.0f),
+					0,
+					255,
+					0
+			));
+		} else {
+			colorOffset	.putInt		(vertexAddress,			FastColor.ABGR32.color(
+					(int) (alpha	* 255.0f),
+					(int) (blue		* 255.0f),
+					(int) (green	* 255.0f),
+					(int) (red		* 255.0f)
+			));
+		}
 		uv0Offset	.putFloat	(vertexAddress + 0L,	pU);
 		uv0Offset	.putFloat	(vertexAddress + 4L,	pV);
 		uv1Offset	.putInt		(vertexAddress,			pPackedOverlay);
@@ -351,7 +368,11 @@ public class AcceleratedBufferBuilder extends DefaultedVertexConsumer implements
 				bufferSize
 		);
 
-		colorOffset	.putInt(vertexAddress, FastColorUtils.convert(color));
+		if (CoreFeature.isDebugRenderPathEnabled()) {
+			colorOffset	.putInt(vertexAddress, 0xFF0000FF); // Solid blue (ARGB32)
+		} else {
+			colorOffset	.putInt(vertexAddress, FastColorUtils.convert(color));
+		}
 		uv1Offset	.putInt(vertexAddress, overlay);
 		uv2Offset	.putInt(vertexAddress, light);
 
@@ -386,6 +407,10 @@ public class AcceleratedBufferBuilder extends DefaultedVertexConsumer implements
 					defaultG,
 					defaultB
 			);
+		}
+
+		if (CoreFeature.isDebugRenderPathEnabled()) {
+			color = 0xFFFF0000; // Solid red (ARGB32)
 		}
 
 		var meshId			= mesh			.meshId	();

@@ -38,6 +38,7 @@ public class FeatureConfig {
 	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					coreCacheDynamicRenderType;
 	public			final	ForgeConfigSpec.ConfigValue<ViewportBindingStateType>		coreViewportBindingType;
 	public			final	ForgeConfigSpec.ConfigValue<ScissorBindingStateType>		coreScissorBindingType;
+	public			final	ForgeConfigSpec.ConfigValue<DebugRenderPath>					coreDebugRenderPath;
 
 	public			final	ForgeConfigSpec.ConfigValue<FeatureStatus>					restoringFeatureStatus;
 	public			final	ForgeConfigSpec.ConfigValue<BlockBufferBindingCacheType>	restoringBindingCacheType;
@@ -175,6 +176,13 @@ public class FeatureConfig {
 				.translation			("acceleratedrendering.configuration.core_settings.debug_context")
 				.worldRestart			()
 				.defineEnum				("debug_context",						FeatureStatus.ENABLED);
+
+		coreDebugRenderPath								= builder
+				.comment				("- DISABLED: Debug render path visualization is disabled.")
+				.comment				("- ENTITY_CACHE_STATUS: Entities using cached GPU meshes will be rendered in red, entities using freshly uploaded vertices will be rendered in green, and entities using client-side cached meshes will be rendered in blue.")
+				.comment				("- FULL_OPTIMIZATION_STATE: In addition to ENTITY_CACHE_STATUS, orientation-culled faces will be rendered in yellow, and shared mesh instances will be rendered in magenta.")
+				.translation			("acceleratedrendering.configuration.core_settings.debug_render_path")
+				.defineEnum				("debug_render_path",					DebugRenderPath.DISABLED);
 
 		coreForceTranslucentAcceleration				= builder
 				.comment				("- DISABLED: Translucent RenderType will fallback to vanilla rendering pipeline if the accelerated pipeline does not support translucent sorting unless mods explicitly enable force translucent acceleration temporarily when rendering their own geometries.")
